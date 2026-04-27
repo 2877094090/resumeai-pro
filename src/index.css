@@ -1,0 +1,89 @@
+/* ==================== 全局 Tailwind 基础样式 ==================== */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==================== 全局基础样式 ==================== */
+@layer base {
+  body {
+    @apply bg-zinc-950 text-white font-sans; /* 深色赛博背景 + 默认字体 */
+  }
+}
+
+/* ==================== 优化简历导出样式 ====================  */
+#optimized-resume-preview {
+  font-family: 'Segoe UI', 'Microsoft YaHei', Arial, sans-serif !important;
+  line-height: 1.8 !important;
+  color: #2c3e50 !important;
+  background: white !important;
+  padding: 40px 30px !important;
+}
+
+#optimized-resume-preview h1 {
+  font-size: 28px !important;
+  font-weight: bold !important;
+  text-align: center !important;
+  margin: 0 0 8px 0 !important;
+  color: #1a1a1a !important;
+}
+
+#optimized-resume-preview h2 {
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  margin: 18px 0 10px 0 !important;
+  color: #0066cc !important;
+  border-bottom: 2px solid #0066cc !important;
+  padding-bottom: 5px !important;
+}
+
+#optimized-resume-preview h3 {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  margin: 10px 0 5px 0 !important;
+  color: #333 !important;
+}
+
+#optimized-resume-preview p {
+  margin: 6px 0 !important;
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+  color: #2c3e50 !important;
+}
+
+#optimized-resume-preview ul {
+  margin: 8px 0 !important;
+  padding-left: 20px !important;
+}
+
+#optimized-resume-preview li {
+  margin: 4px 0 !important;
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+  color: #2c3e50 !important;
+}
+
+#optimized-resume-preview strong {
+  font-weight: 700 !important;
+  color: #0066cc !important;
+}
+
+#optimized-resume-preview em {
+  font-style: italic !important;
+  color: #666 !important;
+}
+
+/* ==================== 玻璃拟态核心样式（特工终端风格） ==================== */
+.glass {
+  @apply bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl; 
+  /* 半透明毛玻璃效果 + 高斯模糊 + 白色描边 + 强阴影 */
+}
+
+.glass-hover:hover {
+  @apply border-cyan-400/50 shadow-cyan-500/30; /* 鼠标悬停时高亮边框和阴影 */
+}
+
+/* ==================== 渐变标题样式 ==================== */
+.text-gradient {
+  @apply bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text text-transparent;
+  /* 赛博朋克风格的彩色渐变文字 */
+}

@@ -1,0 +1,362 @@
+<script setup lang="ts">
+import { ref, nextTick } from 'vue'
+import html2pdf from 'html2pdf.js'
+
+const file = ref<File | null>(null)
+const isDragging = ref(false)
+const isAnalyzing = ref(false)
+const analysisResult = ref<any>(null)
+const optimizedResume = ref<string>('')   
+const fullResumeText = ref<string>('')      // 新增：保存原始简历完整文字
+
+const GEMINI_API_KEY = 'AIzaSyBoCP16_8N7cFZP3GfDFJtkEQxkEaHKkRE'
+
+// ==================== PDF转Base64 ====================
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const base64 = (reader.result as string).split(',')[1]
+      resolve(base64)
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
+// ==================== Gemini 多模态解析PDF ====================
+const analyzeWithGemini = async (pdfFile: File) => {
+  const base64Data = await fileToBase64(pdfFile)
+
+  const prompt = `你是一位2026年前端/AI前端招聘专家。
+这是一个求职者的简历PDF，请先完整提取PDF中的所有文字内容，然后严格按照以下JSON格式输出分析结果：
+
+{
+  "score": 数字（0-100，简历综合评分）,
+  "atsScore": 数字（0-100，ATS系统通过率）,
+  "strengths": ["亮点1", "亮点2", "亮点3"],
+  "weaknesses": ["问题1", "问题2", "问题3"],
+  "suggestions": ["建议1", "建议2", "建议3"]
+}
+
+请确保输出严格的JSON格式，不要添加任何额外文字。`
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: prompt },
+            { inlineData: { mimeType: 'application/pdf', data: base64Data } }
+          ]
+        }]
+      })
+    }
+  )
+
+  if (!response.ok) {
+    throw new Error(`API 请求失败: ${response.status} ${response.statusText}`)
+  }
+
+  const data = await response.json()
+  console.log('Gemini 分析响应:', data)  // 调试日志
+
+  const jsonStr = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+  console.log('提取的 JSON 字符串:', jsonStr)  // 调试日志
+
+  const jsonMatch = jsonStr.match(/\{[\s\S]*\}/)
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0])
+      console.log('解析后的分析结果:', parsed)  // 调试日志
+      return parsed
+    } catch (parseErr) {
+      console.error('JSON 解析失败:', parseErr)
+      return null
+    }
+  } else {
+    console.error('未找到有效的 JSON 内容')
+    return null
+  }
+}
+
+// ==================== 保存原始简历完整文字 ====================
+const extractResumeText = async (pdfFile: File) => {
+  const base64Data = await fileToBase64(pdfFile)
+  const prompt = `请直接提取这个PDF简历的全部原始文字内容，不要遗漏任何信息，不要添加任何解释，直接输出纯文本。`
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: prompt },
+            { inlineData: { mimeType: 'application/pdf', data: base64Data } }
+          ]
+        }]
+      })
+    }
+  )
+
+  const data = await response.json()
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+}
+
+// ==================== AI一键生成优化版简历（已修复核心问题） ====================
+const generateOptimizedResume = async () => {
+  if (!analysisResult.value || !fullResumeText.value || !analysisResult.value.score) {
+    alert('请先完成PDF分析并确保分析结果有效')
+    return
+  }
+
+  isAnalyzing.value = true
+
+  const prompt = `你是一位顶级前端招聘专家和简历优化专家。以下是用户的原始简历：
+
+${fullResumeText.value}
+
+请基于以上真实简历，生成优化版本。要求：
+
+【重点优化】
+1. 量化所有成果：添加具体数据（性能提升%、用户增长%、代码复用率%等）
+2. 突出AI/Agent技术：在项目和技能中强调AI协同开发、Agent设计、LLM集成
+3. 改进项目描述：每个项目2-3句话，每句包含具体成就而非空泛词汇
+4. 技能排序：前置核心技能Vue3、TypeScript、Agent、AI、Vite、Tailwind等
+5. 工作成就：明确职位、贡献数据、难点与解决方案、技术领导力
+6. 教育荣誉：强调相关奖项与技能竞赛
+
+【HTML格式要求】
+- 使用简洁标签：h1、h2、h3、p、ul、li、strong、em
+- 不要复杂CSS、样式属性或代码块标记
+- 文本用<strong>标签加粗关键词
+- 数据用<strong>标签强调
+
+【输出示例】
+<h1>陈泽锋</h1>
+<p><strong>求职意向：</strong>AI前端工程师（Vue3 + AI集成方向）</p>
+<h2>项目经历</h2>
+<p><strong>项目名</strong>（日期）</p>
+<ul>
+<li>核心成就：实现了某功能，提升性能<strong>200%</strong></li>
+<li>技术方案：使用Vue3 + Agent API，支持<strong>实时流式输出</strong></li>
+</ul>
+
+直接输出优化后的完整HTML简历。`
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      }
+    )
+
+    const data = await response.json()
+    let htmlContent = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+    
+    // 清理可能的 markdown 代码块标记
+    htmlContent = htmlContent.replace(/^```html\n?/i, '').replace(/\n?```$/i, '').trim()
+    
+    // 添加完整的 HTML 包装与 PDF 友好的样式
+    const styledHtml = `<div style="font-family: 'Segoe UI', 'Microsoft YaHei', Arial, sans-serif; line-height: 1.8; color: #2c3e50; padding: 40px 30px; background: white;">
+${htmlContent}
+</div>`
+    
+    optimizedResume.value = styledHtml
+    console.log('优化简历已生成')
+  } catch (err) {
+    console.error('生成优化简历出错:', err)
+    alert('生成优化简历失败：' + (err as Error).message)
+  } finally {
+    isAnalyzing.value = false
+  }
+}
+
+// ==================== 一键导出PDF ====================
+const exportToPDF = async () => {
+  const element = document.getElementById('optimized-resume-preview')
+  if (!element || !optimizedResume.value) {
+    alert('请先生成优化版简历')
+    return
+  }
+
+  try {
+    await nextTick()
+
+    const opt = {
+      margin: [10, 10, 10, 10],
+      filename: '陈泽锋-AI前端工程师-优化版简历.pdf',
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, allowTaint: true, logging: false, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
+    } as any
+
+    // 直接从页面上的元素导出
+    await html2pdf().set(opt).from(element).save()
+    alert('简历已导出为 PDF')
+  } catch (err) {
+    console.error('导出 PDF 失败:', err)
+    alert('导出 PDF 失败：' + (err as Error).message)
+  }
+}
+
+// ==================== 开始分析（已新增保存原始文字） ====================
+const startAnalysis = async () => {
+  if (!file.value) return
+
+  isAnalyzing.value = true
+  analysisResult.value = null
+  optimizedResume.value = ''
+  fullResumeText.value = ''
+
+  try {
+    // 保存原始简历文字
+    fullResumeText.value = await extractResumeText(file.value)
+    
+    // 生成分析报告
+    const result = await analyzeWithGemini(file.value)
+    if (result) analysisResult.value = result
+  } catch (err) {
+    console.error(err)
+    alert('解析失败：' + (err as Error).message)
+  } finally {
+    isAnalyzing.value = false
+  }
+}
+
+// 上传相关函数（保持不变）
+const handleDrop = (e: DragEvent) => {
+  e.preventDefault()
+  isDragging.value = false
+  const droppedFile = e.dataTransfer?.files[0]
+  if (droppedFile?.type === 'application/pdf') {
+    file.value = droppedFile
+  } else {
+    alert('请上传 PDF 格式的简历！')
+  }
+}
+
+const handleFileSelect = (e: Event) => {
+  const target = e.target as HTMLInputElement
+  if (target.files?.[0]) file.value = target.files[0]
+}
+
+const clearFile = () => {
+  file.value = null
+  analysisResult.value = null
+  optimizedResume.value = ''
+}
+</script>
+
+<template>
+  <!-- 以下模板和你原来的完全一致，只保留你需要的部分 -->
+  <div class="min-h-screen bg-zinc-950 flex items-center justify-center p-6">
+    <div class="max-w-6xl w-full glass rounded-3xl p-8 border border-white/10">
+      
+      <div class="text-center mb-8">
+        <h1 class="text-5xl font-bold text-gradient mb-2">ResumeAI Pro</h1>
+        <p class="text-zinc-400 text-lg">AI 智能简历优化助手 · 特工终端风格</p>
+        <p class="text-emerald-400 text-sm mt-1">Gemini 多模态直接解析PDF · 一键优化导出</p>
+      </div>
+
+      <!-- 上传区 -->
+      <div class="border-2 border-dashed border-white/30 rounded-2xl p-12 text-center hover:border-cyan-400 transition-all cursor-pointer glass-hover"
+           :class="{ 'border-cyan-400 bg-cyan-500/10': isDragging }"
+           @dragover.prevent="isDragging = true"
+           @dragleave.prevent="isDragging = false"
+           @drop.prevent="handleDrop">
+        <input type="file" accept=".pdf" class="hidden" id="resume-upload" @change="handleFileSelect">
+        <label for="resume-upload" class="cursor-pointer block">
+          <div class="mx-auto w-20 h-20 rounded-3xl bg-white/10 flex items-center justify-center mb-6 text-4xl">📄</div>
+          <p class="text-2xl font-medium mb-2">拖拽或点击上传简历 PDF</p>
+          <p class="text-zinc-400">支持 PDF 文件 · 最大 10MB</p>
+        </label>
+      </div>
+
+      <!-- 已上传文件 + 分析按钮 -->
+      <div v-if="file" class="mt-8 p-5 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-between">
+        <div class="flex items-center gap-4">
+          <span class="text-3xl">✅</span>
+          <div>
+            <p class="font-medium">{{ file.name }}</p>
+            <p class="text-emerald-400 text-sm">{{ (file.size / 1024 / 1024).toFixed(1) }} MB</p>
+          </div>
+        </div>
+        <div class="flex gap-3">
+          <button @click="clearFile" class="px-6 py-3 bg-white/10 hover:bg-white/20 rounded-2xl text-sm">重新上传</button>
+          <button @click="startAnalysis" class="px-8 py-3 bg-gradient-to-r from-cyan-400 to-purple-500 hover:from-cyan-500 hover:to-purple-600 rounded-2xl font-medium transition-all flex items-center gap-2" :disabled="isAnalyzing">
+            <span v-if="isAnalyzing" class="animate-pulse">Gemini 正在深度解析PDF...</span>
+            <span v-else>🚀 开始 AI 真实分析</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- AI 分析结果 -->
+      <div v-if="analysisResult && analysisResult.score" class="mt-10 glass rounded-3xl p-8">
+        <h2 class="text-3xl font-bold text-gradient mb-6 flex items-center gap-3">
+          <span>📊 AI 分析报告</span>
+          <span class="text-2xl bg-emerald-500/20 text-emerald-400 px-4 py-1 rounded-2xl">{{ analysisResult.score }}分</span>
+        </h2>
+
+        <div class="grid grid-cols-2 gap-8">
+          <div>
+            <h3 class="text-emerald-400 font-medium mb-3">✅ 亮点</h3>
+            <ul class="space-y-2">
+              <li v-for="(item, i) in analysisResult.strengths" :key="i" class="flex gap-2 text-zinc-300">
+                <span class="text-emerald-400">▸</span> {{ item }}
+              </li>
+            </ul>
+          </div>
+          <div>
+            <h3 class="text-orange-400 font-medium mb-3">⚠️ 需要改进</h3>
+            <ul class="space-y-2">
+              <li v-for="(item, i) in analysisResult.weaknesses" :key="i" class="flex gap-2 text-zinc-300">
+                <span class="text-orange-400">▸</span> {{ item }}
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="mt-8">
+          <h3 class="text-purple-400 font-medium mb-3">💡 优化建议</h3>
+          <ul class="space-y-3">
+            <li v-for="(item, i) in analysisResult.suggestions" :key="i" class="bg-white/5 p-4 rounded-2xl text-zinc-300 flex gap-3">
+              <span class="text-purple-400 font-bold">{{ Number(i) + 1 }}.</span> {{ item }}
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- 优化简历区域 -->
+      <div v-if="analysisResult && analysisResult.score" class="mt-12">
+        <button 
+          @click="generateOptimizedResume"
+          class="w-full py-5 bg-gradient-to-r from-emerald-400 to-cyan-500 rounded-3xl font-medium text-xl mb-6 flex items-center justify-center gap-3"
+          :disabled="isAnalyzing"
+        >
+          ✨ AI 一键生成优化版简历
+        </button>
+
+        <div v-if="optimizedResume" id="optimized-resume-preview" class="glass rounded-3xl p-10 prose prose-invert max-w-none text-white">
+          <div v-html="optimizedResume"></div>
+        </div>
+
+        <button 
+          v-if="optimizedResume"
+          @click="exportToPDF"
+          class="mt-6 w-full py-5 bg-gradient-to-r from-purple-400 to-pink-500 rounded-3xl font-medium text-xl"
+        >
+          📄 一键导出为PDF（可直接投递）
+        </button>
+      </div>
+    </div>
+  </div>
+</template>
