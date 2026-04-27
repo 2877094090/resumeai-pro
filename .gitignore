@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# .gitignore 文件内容
+.env
+.env.local
+node_modules/
+dist/
